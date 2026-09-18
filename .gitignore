@@ -1,0 +1,6 @@
+# Build/runtime artifacts never belong in the plugin repo
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

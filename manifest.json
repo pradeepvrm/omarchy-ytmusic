@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "quickshell.ytmusic",
+  "name": "Omarchy YouTube Music",
+  "version": "1.0.0",
+  "author": "OmarchyYouTubeMusic",
+  "license": "MIT",
+  "description": "YouTube Music in Omarchy with a top bar widget and a full terminal player that uses your YouTube account for the homepage, recommendations, and library.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "keepLoaded": false,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy YouTube Music",
+    "description": "YouTube Music in Omarchy with a top bar widget and a full terminal player that uses your YouTube account for the homepage, recommendations, and library.",
+    "category": "Media",
+    "aliases": [
+      "ytmusic",
+      "youtube-music",
+      "music"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "left",
+    "defaults": {
+      "showTrackTitle": "On",
+      "showArtistName": "On",
+      "showPausedTrack": "On",
+      "scrollBarText": "On",
+      "maxBarTextWidth": "260",
+      "audioQuality": "Best available",
+      "idleShutdownMinutes": 10,
+      "launchTerminal": ""
+    },
+    "schema": [
+      {
+        "key": "showTrackTitle",
+        "type": "enum",
+        "label": "Show track title in bar",
+        "options": [
+          "On",
+          "Off"
+        ],
+        "defaultValue": "On",
+        "description": "Show the current song title in the bar."
+      },
+      {
+        "key": "showArtistName",
+        "type": "enum",
+        "label": "Show artist name in bar",
+        "options": [
+          "On",
+          "Off"
+        ],
+        "defaultValue": "On",
+        "description": "Show the current artist name in the bar."
+      },
+      {
+        "key": "showPausedTrack",
+        "type": "enum",
+        "label": "Show paused track in bar",
+        "options": [
+          "On",
+          "Off"
+        ],
+        "defaultValue": "On",
+        "description": "When off, the bar collapses to the YouTube Music icon while paused."
+      },
+      {
+        "key": "scrollBarText",
+        "type": "enum",
+        "label": "Scroll long bar text",
+        "options": [
+          "On",
+          "Off"
+        ],
+        "defaultValue": "On",
+        "description": "Softly scroll bar text that does not fit."
+      },
+      {
+        "key": "maxBarTextWidth",
+        "type": "string",
+        "label": "Maximum bar text width",
+        "defaultValue": "260",
+        "description": "Width from 160 to 560 px. Use 0 for unlimited."
+      },
+      {
+        "key": "audioQuality",
+        "type": "enum",
+        "label": "Playback quality",
+        "options": [
+          "Best available",
+          "Cap at 128 kbps",
+          "Cap at 96 kbps"
+        ],
+        "defaultValue": "Best available",
+        "description": "Audio format cap passed to yt-dlp. Takes effect the next time the player starts."
+      },
+      {
+        "key": "idleShutdownMinutes",
+        "type": "integer",
+        "label": "Sleep idle player",
+        "min": 0,
+        "max": 1440,
+        "step": 5,
+        "defaultValue": 10,
+        "description": "Minutes after playback fully stops before the background player exits. Use 0 to keep it running."
+      },
+      {
+        "key": "launchTerminal",
+        "type": "string",
+        "label": "Terminal command for the TUI",
+        "defaultValue": "",
+        "description": "Command that opens a terminal running a program, for example \"kitty\" (kitty CMD), \"foot\" (foot -e CMD), or \"xdg-terminal-exec\". Empty picks the Omarchy default terminal."
+      }
+    ]
+  }
+}
