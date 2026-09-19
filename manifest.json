@@ -116,7 +116,7 @@
         "type": "string",
         "label": "Terminal command for the TUI",
         "defaultValue": "",
-        "description": "Command that opens a terminal running a program, for example \"kitty\" (kitty CMD), \"foot\" (foot -e CMD), or \"xdg-terminal-exec\". Empty picks the Omarchy default terminal."
+        "description": "Command that opens a terminal running a program, for example \"kitty\" (kitty CMD), \"foot\" (foot CMD), or \"xdg-terminal-exec\". Empty picks the Omarchy default terminal."
       }
     ]
   }

@@ -82,22 +82,21 @@ a setup in progress.
 
 ## Authentication
 
-Sign-in follows ytmusicapi's OAuth setup for custom clients, which the
-library requires since it stopped shipping default OAuth credentials. The
-user creates a Google Cloud OAuth client (type *TVs and Limited Input
-devices*, with the YouTube Data API enabled) once; the TUI collects its ID
-and secret on the auth screen and runs Google's device flow directly through
-`OAuthCredentials.get_code()` / `token_from_code()` — the same calls the
-library's own CLI makes, replayed with a polling loop because the stock
-`prompt_for_token` blocks on `input()`, which cannot work under Textual.
-Polling honors Google's `interval`, backs off on `slow_down`, and stops on
-expiry or cancel.
+Sign-in uses browser-cookie auth: the user pastes request headers exported
+from a logged-in music.youtube.com session (DevTools → Network), which the
+TUI parses with ytmusicapi's `setup_browser` into
+`$XDG_STATE_HOME/omarchy-ytmusic/browser.json` (mode 0600). `YTMusic` is
+constructed from that file with no extra credentials, giving the
+`BROWSER` (SAPISIDHASH) auth type.
 
-Two files persist under `$XDG_STATE_HOME/omarchy-ytmusic/`, both mode 0600:
-`oauth.json` (the refreshable token) and `client.json` (the OAuth client
-credentials). `YTMusic` is constructed with both — the token path and an
-`OAuthCredentials` instance — because a custom-client token cannot refresh
-without its client. No password ever exists outside Google's page.
+Rationale: the previous Google OAuth device flow for custom clients
+(token in `oauth.json`, client in `client.json`) is kept as a fallback,
+but since late August 2025 YouTube's InnerTube servers reject those
+Bearer tokens with HTTP 400 "invalid argument" on every endpoint, while
+the same token validates fine at Google and unauthenticated requests
+succeed (upstream ytmusicapi issue #813, "use browser based auth instead
+of oauth"). The wrapper therefore prefers `browser.json` whenever both
+credential sets exist. No password ever exists outside Google's page.
 
 ## Idle lifecycle
 

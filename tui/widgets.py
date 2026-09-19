@@ -65,7 +65,10 @@ class TrackTable(DataTable):
                 track.artist,
                 track.duration_text,
             ])
-            self.add_row(*row, key=track.video_id)
+            # Row keys must be unique: the same song can legitimately appear
+            # twice in a list (user playlists, queue), and DataTable raises
+            # DuplicateKey otherwise, killing the app.
+            self.add_row(*row, key=f"track-{index}-{track.video_id}")
 
     def cursor_track(self) -> Optional[Track]:
         if not self.tracks:
@@ -132,12 +135,13 @@ class CollectionTable(DataTable):
             self.add_columns(*headers)
         else:
             self.clear()
-        for collection in self.collections:
+        for index, collection in enumerate(self.collections):
             kind = {"playlist": "Playlist", "album": "Album",
                     "single": "Single", "ep": "EP"}.get(collection.kind, "List")
             count = f"{collection.track_count} tracks" if collection.track_count else ""
+            # See TrackTable.set_tracks: keys must be unique per row.
             self.add_row(collection.title, collection.subtitle, kind, count,
-                         key=collection.browse_id)
+                         key=f"collection-{index}-{collection.browse_id}")
 
     def cursor_collection(self) -> Optional[Collection]:
         if not self.collections:

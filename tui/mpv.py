@@ -270,6 +270,13 @@ class MpvIpc:
         await self.load(video_ids[0], "replace")
         for video_id in video_ids[1:]:
             await self.load(video_id, "append-play")
+        # mpv's pause flag is sticky: a previous pause carries over to newly
+        # loaded files, which made fresh playback start silent. An explicit
+        # play request always means audible playback.
+        try:
+            await self.set_property("pause", False)
+        except MpvError:
+            pass
 
     async def toggle(self) -> None:
         await self.set_property("pause", not self.state.paused)
@@ -295,6 +302,10 @@ class MpvIpc:
     async def jump(self, index: int) -> None:
         if 0 <= index < self.state.playlist_count:
             await self.command("playlist-play-index", index)
+            try:
+                await self.set_property("pause", False)
+            except MpvError:
+                pass
 
     async def remove(self, index: int) -> None:
         if 0 <= index < self.state.playlist_count:

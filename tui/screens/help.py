@@ -5,9 +5,10 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Static
+from textual.widgets import Button, Footer, Static
 
 from .. import __version__
+from .auth import AuthScreen
 
 HELP_TEXT = f"""[b #ff5252]Omarchy YouTube Music[/] — v{__version__}
 
@@ -36,15 +37,19 @@ HELP_TEXT = f"""[b #ff5252]Omarchy YouTube Music[/] — v{__version__}
   s              Playlist or album screen: shuffle and play
 
 [b]Account[/]
-  The first launch signs you in with your YouTube account through
-  Google's device flow, using a personal Google Cloud OAuth client
-  (created once at console.cloud.google.com — type "TVs and Limited
-  Input devices"). After that the homepage, recommendations, library,
-  and likes are yours.
+  Sign-in uses your browser's YouTube Music cookies: paste request
+  headers from a logged-in music.youtube.com session (DevTools,
+  Network tab) on the sign-in screen. The Google OAuth device flow
+  is offered as a fallback, but YouTube's servers currently reject
+  those tokens, so prefer the browser method.
 
+  Browser cookies: [i]~/.local/state/omarchy-ytmusic/browser.json[/]
   Sign-in token:   [i]~/.local/state/omarchy-ytmusic/oauth.json[/]
   OAuth client:    [i]~/.local/state/omarchy-ytmusic/client.json[/]
   Python runtime:  [i]~/.local/share/omarchy-ytmusic/venv[/]
+
+  If requests start failing (expired cookies, revoked access), sign
+  out below and sign back in with fresh headers.
 
 [b]Bar widget[/]
   Click the YouTube Music icon in the top bar for the mini player:
@@ -67,7 +72,16 @@ class HelpScreen(Screen):
     def compose(self) -> ComposeResult:
         with VerticalScroll():
             yield Static(HELP_TEXT)
+            yield Button("Sign out and switch account", id="sign-out",
+                         variant="warning")
         yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if (event.button.id or "") != "sign-out":
+            return
+        self.app.api.sign_out()
+        self.app.pop_screen()
+        self.app.switch_screen(AuthScreen())
 
     def action_close(self) -> None:
         self.app.pop_screen()

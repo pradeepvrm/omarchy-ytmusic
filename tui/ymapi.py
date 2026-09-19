@@ -44,12 +44,53 @@ def client_credentials_path() -> Path:
     return state_home() / "client.json"
 
 
-def signed_in() -> bool:
+def browser_path() -> Path:
+    return state_home() / "browser.json"
+
+
+def browser_signed_in() -> bool:
+    try:
+        payload = json.loads(browser_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and bool(payload.get("cookie"))
+
+
+def oauth_signed_in() -> bool:
     try:
         return (oauth_path().is_file() and oauth_path().stat().st_size > 0
                 and client_credentials_path().is_file())
     except OSError:
         return False
+
+
+def signed_in() -> bool:
+    return browser_signed_in() or oauth_signed_in()
+
+
+def auth_method() -> str:
+    """Which credential set will be used: 'browser', 'oauth', or ''."""
+    if browser_signed_in():
+        return "browser"
+    if oauth_signed_in():
+        return "oauth"
+    return ""
+
+
+def store_browser_headers(headers_raw: str) -> None:
+    """Parse pasted browser request headers and store browser.json.
+
+    Raises whatever ytmusicapi raises (e.g. YTMusicUserError when the
+    required cookie entries are missing).
+    """
+    from ytmusicapi.auth.browser import setup_browser
+
+    state_home().mkdir(parents=True, exist_ok=True)
+    setup_browser(str(browser_path()), headers_raw)
+    try:
+        browser_path().chmod(0o600)
+    except OSError:
+        pass
 
 
 def load_client_credentials() -> Optional[Dict[str, str]]:
@@ -202,30 +243,49 @@ class YtMusic:
 
     def _yt(self) -> Any:
         if self._client is None:
-            if not signed_in():
-                raise NotSignedIn()
-            from ytmusicapi import YTMusic as _YTMusic
-            from ytmusicapi.auth.oauth import OAuthCredentials
+            if browser_signed_in():
+                # Browser-cookie auth is the working method: plain cookie
+                # headers exported from music.youtube.com. Preferred over
+                # OAuth because YouTube's servers currently reject OAuth
+                # Bearer tokens from custom clients with HTTP 400.
+                from ytmusicapi import YTMusic as _YTMusic
 
-            client = load_client_credentials()
-            if client is None:
+                try:
+                    browser_path().chmod(0o600)
+                except OSError:
+                    pass
+                self._client = _YTMusic(str(browser_path()))
+            elif oauth_signed_in():
+                from ytmusicapi import YTMusic as _YTMusic
+                from ytmusicapi.auth.oauth import OAuthCredentials
+
+                client = load_client_credentials()
+                if client is None:
+                    raise NotSignedIn()
+                credentials = OAuthCredentials(
+                    client_id=client["client_id"],
+                    client_secret=client["client_secret"],
+                )
+                try:
+                    oauth_path().chmod(0o600)
+                except OSError:
+                    pass
+                self._client = _YTMusic(str(oauth_path()), oauth_credentials=credentials)
+            else:
                 raise NotSignedIn()
-            credentials = OAuthCredentials(
-                client_id=client["client_id"],
-                client_secret=client["client_secret"],
-            )
-            try:
-                oauth_path().chmod(0o600)
-            except OSError:
-                pass
-            self._client = _YTMusic(str(oauth_path()), oauth_credentials=credentials)
         return self._client
+
+    def reload_auth(self) -> None:
+        """Drop the cached client so new credential files take effect."""
+        self._client = None
+        self.home_shelves = []
+        self._account_name = ""
 
     def sign_out(self) -> None:
         self._client = None
         self.home_shelves = []
         self._account_name = ""
-        for path in (oauth_path(), client_credentials_path()):
+        for path in (browser_path(), oauth_path(), client_credentials_path()):
             try:
                 path.unlink()
             except OSError:
@@ -234,7 +294,8 @@ class YtMusic:
     # ------------------------------------------------------------ queries
 
     def home(self) -> List[Shelf]:
-        shelves = shelves_from(self._yt().home())
+        # NOTE: the ytmusicapi method is get_home(); there is no .home().
+        shelves = shelves_from(self._yt().get_home(limit=6))
         if shelves:
             self.home_shelves = shelves
         return self.home_shelves

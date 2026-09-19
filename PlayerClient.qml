@@ -29,6 +29,7 @@ Item {
 
   signal eventReceived(var message)
   signal responseReceived(var message)
+  signal observationsStarted()
 
   function resetPending(reason) {
     var waiters = pending
@@ -114,13 +115,30 @@ Item {
     id: socketComponent
     Socket {
       path: root.socketPath
-      connected: true
       parser: SplitParser {
         splitMarker: "\n"
         onRead: function(line) { root.handleLine(line) }
       }
+      connected: true
       onConnectionStateChanged: {
-        if (connected) root.observeAll()
+        if (connected) settleTimer.restart()
+        else settleTimer.stop()
+      }
+    }
+  }
+
+  // Grace period between socket connect and the first writes: commands
+  // flushed in the same tick as connection establishment are silently
+  // swallowed, which starves mpv of observe_property and leaves the
+  // service blind with zero errors.
+  Timer {
+    id: settleTimer
+    interval: 400
+    repeat: false
+    onTriggered: {
+      if (root.connected) {
+        root.observeAll()
+        observationsStarted()
       }
     }
   }

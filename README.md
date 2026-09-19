@@ -29,21 +29,26 @@ TUI**, or run:
 omarchy-ytmusic
 ```
 
-Sign-in uses ytmusicapi's OAuth setup with a personal Google Cloud client —
-the same route the library documents:
+Sign-in uses your browser's YouTube Music cookies — no API key needed:
 
-1. **Once per account family**: open
-   [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials),
-   create any project, enable the **YouTube Data API v3**, and create an
-   **OAuth client ID** of type **TVs and Limited Input devices**.
-2. The TUI asks for that client ID and client secret (kept in
-   `~/.local/state/omarchy-ytmusic/` with owner-only permissions).
-3. Google's device sign-in finishes in your browser — the TUI shows the URL
-   and code and detects the moment you are done.
+1. Open [music.youtube.com](https://music.youtube.com) and log in as usual.
+2. Open DevTools (F12), go to the **Network** tab, and reload the page.
+3. Click any request to `music.youtube.com` (e.g. `browse`), then under
+   **Request Headers** copy them all (right-click, copy all).
+4. Paste into the TUI and save. The headers are kept in
+   `~/.local/state/omarchy-ytmusic/browser.json` with owner-only
+   permissions and never leave your machine.
 
 Your password is only ever entered on Google's own page. After this one-time
 setup, your homepage, recommendations, likes, and library are yours on the
-desktop.
+desktop. If the cookies expire (Google rotates them periodically), the TUI
+shows auth errors — just paste fresh headers the same way.
+
+The TUI also offers the Google OAuth device flow (personal Cloud client of
+type **TVs and Limited Input devices**) as a fallback, but note: since late
+August 2025 YouTube's servers reject those tokens with HTTP 400
+(`upstream ytmusicapi issue #813`), so OAuth sign-in succeeds yet every
+request fails. Use the browser method until that is resolved upstream.
 
 ## The bar widget
 

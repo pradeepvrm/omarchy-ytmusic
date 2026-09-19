@@ -83,6 +83,11 @@ class YtMusicApp(App):
         self.state_writer = StateWriter()
         self.queue_tracks: List[Track] = []
         self.queue_source: str = ""
+        # True once THIS session has loaded its own playlist into mpv.
+        # Only an owning session may (over)write the state.json snapshot the
+        # bar widget reads; otherwise a fresh TUI would clobber the previous
+        # session's titles with its empty queue on the first player event.
+        self._owns_playlist: bool = False
         self._volume_before_mute: float = 100.0
         self._liked: set = set()
 
@@ -119,6 +124,14 @@ class YtMusicApp(App):
     def _sync_after_player_event(self) -> None:
         state = self.player.state
         index = state.playlist_pos
+        if not self._owns_playlist:
+            # mpv is playing a playlist owned by another session (e.g. kept
+            # going after this TUI was restarted or the previous one quit).
+            # Don't overwrite its state.json snapshot with our queue —
+            # the bar widget reads that snapshot for titles.
+            self.refresh_now_playing()
+            self.refresh_queue_pane()
+            return
         signed = signed_in()
         self.state_writer.write(self.queue_tracks, index if index >= 0 else 0,
                                 signed, self.queue_source)
@@ -172,6 +185,7 @@ class YtMusicApp(App):
             return
         self.queue_tracks = playable[index:]
         self.queue_source = source
+        self._owns_playlist = True
         self._sync_after_player_event()
 
     async def enqueue(self, track: Track, play_next: bool = False) -> None:

@@ -23,8 +23,11 @@ Item {
 
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "quickshell.ytmusic"
-  readonly property string pluginDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+  // NOTE: do NOT read the plugin path from manifest.__sourceDir — the shell
+  // strips private __ fields before injecting the manifest into third-party
+  // plugins (see shell.qml publicPluginManifest), so that is always empty
+  // here. Qt.resolvedUrl(".") resolves against this file's location instead.
+  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
 
   // ------------------------------------------------------ paths
   readonly property string homeDirectory: Quickshell.env("HOME") || ""
@@ -77,13 +80,13 @@ Item {
       "omarchy-notification-send", "-g", "󰗃",
       "--app-name", "Omarchy YouTube Music", headline, description
     ]
-    notifyProcess.start()
+    notifyProcess.running = true
   }
 
   function startSetupCheck() {
     if (!pluginDir) return
     setupState = "checking"
-    setupCheckProcess.start()
+    setupCheckProcess.running = true
   }
 
   function runSetup() {
@@ -91,7 +94,7 @@ Item {
     setupState = "running"
     setupError = ""
     setupLogTail = ""
-    setupProcess.start()
+    setupProcess.running = true
   }
 
   function retrySetup() {
@@ -180,7 +183,7 @@ Item {
     if (track && (track.title || track.artist)) return track
     var metaTitle = Api.metaValue(mpvMetadata, ["Title", "title"])
     var metaArtist = Api.metaValue(mpvMetadata,
-      ["Artist", "artist", "Uploader", "uploader"])
+      ["Artist", "artist", "Uploader", "uploader", "channel"])
     var videoId = Api.parseVideoId(mpvPath)
     if (metaTitle || metaArtist) {
       return { title: metaTitle, artist: metaArtist, videoId: videoId }
@@ -208,41 +211,66 @@ Item {
 
     onEventReceived: function(message) {
       if (!message || message.event !== "property-change") return
-      var value = message.data
-      switch (message.id) {
-        case 1:
-          root.mpvPaused = value === true
-          break
-        case 2:
-          root.mpvIdleActive = value === true
-          if (value) {
-            root.playbackPosition = 0
-            root.mpvDuration = 0
-          }
-          break
-        case 3:
-          root.mpvQueueIndex = value === undefined || value === null ? -1 : value
+      root.applyObserved(message.id, message.data)
+    }
+
+    onObservationsStarted: root.seedPlayerState()
+  }
+
+  // Shared by push events and the seeding reads below: observation ids
+  // match PlayerClient._observed_ids.
+  function applyObserved(id, value) {
+    switch (id) {
+      case 1:
+        root.mpvPaused = value === true
+        break
+      case 2:
+        root.mpvIdleActive = value === true
+        if (value) {
           root.playbackPosition = 0
-          break
-        case 4:
-          root.mpvQueueCount = value === undefined || value === null ? 0 : value
-          break
-        case 5:
-          root.mpvDuration = value === undefined || value === null ? 0 : value
-          break
-        case 6:
-          root.mpvVolume = value === undefined || value === null ? 100 : value
-          break
-        case 7:
-          root.mpvMetadata = Api.isPlainObject(value) ? value : ({})
-          break
-        case 8:
-          root.mpvPath = value === undefined || value === null ? "" : String(value)
-          break
-        case 9:
-          root.mpvMediaTitle = value === undefined || value === null ? "" : String(value)
-          break
-      }
+          root.mpvDuration = 0
+        }
+        break
+      case 3:
+        root.mpvQueueIndex = value === undefined || value === null ? -1 : value
+        root.playbackPosition = 0
+        break
+      case 4:
+        root.mpvQueueCount = value === undefined || value === null ? 0 : value
+        break
+      case 5:
+        root.mpvDuration = value === undefined || value === null ? 0 : value
+        break
+      case 6:
+        root.mpvVolume = value === undefined || value === null ? 100 : value
+        break
+      case 7:
+        root.mpvMetadata = Api.isPlainObject(value) ? value : ({})
+        break
+      case 8:
+        root.mpvPath = value === undefined || value === null ? "" : String(value)
+        break
+      case 9:
+        root.mpvMediaTitle = value === undefined || value === null ? "" : String(value)
+        break
+    }
+  }
+
+  // Explicit initial reads after (re)subscribing: mpv only pushes changes,
+  // so without these the widget shows stale initials until the next change.
+  // Responses also prove the read path is alive.
+  function seedPlayerState() {
+    var seeds = [
+      [1, "pause"], [2, "idle-active"], [3, "playlist-pos"],
+      [4, "playlist-count"], [5, "duration"], [6, "volume"],
+      [7, "metadata"], [8, "path"], [9, "media-title"]
+    ]
+    for (var i = 0; i < seeds.length; i++) {
+      (function(id, name) {
+        playerClient.getProperty(name, function(ok, value) {
+          if (ok) root.applyObserved(id, value)
+        })
+      })(seeds[i][0], seeds[i][1])
     }
   }
 
@@ -279,7 +307,7 @@ Item {
     if (playerSpawnPending) return
     playerSpawnPending = true
     playerClient.wanted = true
-    mkdirProcess.start()
+    mkdirProcess.running = true
   }
 
   property Process mkdirProcess: Process {
@@ -292,7 +320,7 @@ Item {
         return
       }
       Quickshell.execDetached(root.mpvArguments())
-      root.playerClient.kick()
+      playerClient.kick()
     }
   }
 
@@ -374,7 +402,7 @@ Item {
     id: positionTimer
     interval: 1000
     repeat: true
-    running: root.playerClient.connected && root.hasMedia && !root.mpvPaused
+    running: playerClient.connected && root.hasMedia && !root.mpvPaused
     onTriggered: {
       playerClient.getProperty("playback-time", function(ok, value) {
         if (ok && typeof value === "number") root.playbackPosition = value
@@ -406,7 +434,7 @@ Item {
   Timer {
     interval: 1500
     running: true
-    onTriggered: root.tuiStateFile.reload()
+    onTriggered: tuiStateFile.reload()
   }
 
   // ------------------------------------------------------ TUI launching
@@ -428,7 +456,10 @@ Item {
       args.push(launcherPath)
       return args
     }
-    return ["foot", launcherPath]
+    // Empty (no resolved terminal yet) means the async detectTerminal()
+    // hasn't finished: fall back to the Omarchy default terminal launcher
+    // instead of hardcoding foot, which may not be installed.
+    return ["xdg-terminal-exec", launcherPath]
   }
 
   function launchTui() {
@@ -456,7 +487,7 @@ Item {
       + '[ -n "$t" ] && command -v "$t" >/dev/null 2>&1 && { basename "$t"; exit 0; }; '
       + 'done; exit 1'
     terminalDetectProcess.command = ["sh", "-c", script]
-    terminalDetectProcess.start()
+    terminalDetectProcess.running = true
   }
 
   property Process terminalDetectProcess: Process {
@@ -493,10 +524,20 @@ Item {
   // fires before the injection and would run with an empty plugin path).
   property bool didBootstrap: false
 
+  // Attach to a player that is already running (started before this service
+  // instance loaded, e.g. across a shell restart). Without this the service
+  // stays blind: `wanted` defaults to false, so the reconnect loop never
+  // runs and the widget shows nothing while music plays.
+  function attachToPlayer() {
+    playerClient.wanted = true
+    playerClient.kick()
+  }
+
   onManifestChanged: {
     if (manifest && !didBootstrap) {
       didBootstrap = true
       startSetupCheck()
+      attachToPlayer()
     }
   }
 
