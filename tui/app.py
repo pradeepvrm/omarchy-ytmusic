@@ -23,21 +23,25 @@ from .screens.picker import PlaylistPicker
 from .screens.queue import QueuePane
 from .screens.search import SearchPane
 from .state import StateWriter
-from .widgets import NowPlaying
+from .widgets import PlayerBar
 from .ymapi import YtMusic, signed_in
 
 
 class MainScreen(Screen):
     CSS = """
     TabbedContent { height: 1fr; }
-    NowPlaying {
-        dock: bottom; height: 1; padding: 0 1;
+    PlayerBar {
+        dock: bottom; height: 4; padding: 0 1;
         background: $surface; color: $text;
+        border-top: solid $panel;
     }
+    #player-main { height: 1; }
+    #player-track { width: 1fr; }
+    #player-progress { height: 1; margin-top: 1; color: $text-muted; }
     """
 
     def compose(self) -> ComposeResult:
-        yield NowPlaying("", id="now-playing")
+        yield PlayerBar(id="now-playing")
         with TabbedContent(initial="home"):
             with TabPane("Home", id="home"):
                 yield HomePane()
@@ -96,6 +100,13 @@ class YtMusicApp(App):
     def on_mount(self) -> None:
         self.player.add_observer(self._on_player_event)
         self.set_interval(1.0, self._tick)
+        # Publish auth state promptly so the bar widget doesn't nag about
+        # sign-in while waiting for the first playback event. This never
+        # touches an existing track list (see StateWriter.ensure_signed).
+        try:
+            self.state_writer.ensure_signed(signed_in())
+        except Exception:
+            pass
         if signed_in():
             self.push_screen(MainScreen())
         else:
@@ -147,7 +158,7 @@ class YtMusicApp(App):
 
     def refresh_now_playing(self) -> None:
         try:
-            bar = self.screen.query_one("#now-playing", NowPlaying)
+            bar = self.screen.query_one("#now-playing", PlayerBar)
         except Exception:
             return
         track = self.current_track()

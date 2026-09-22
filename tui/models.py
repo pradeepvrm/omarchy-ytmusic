@@ -245,7 +245,10 @@ def shelves_from(home_results) -> List[Shelf]:
             playlist_id = str(_get(entry, "playlistId", default=""))
             coll_title = str(_get(entry, "title", default="")).strip()
             if (browse_id or playlist_id) and coll_title:
-                kind = "album" if browse_id.startswith("MPREb") else "playlist"
+                if browse_id.startswith("MPSP"):
+                    kind = "podcast"
+                else:
+                    kind = "album" if browse_id.startswith("MPREb") else "playlist"
                 shelf.collections.append(
                     Collection(
                         browse_id=browse_id or playlist_id,

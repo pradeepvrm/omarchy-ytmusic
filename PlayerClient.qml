@@ -73,10 +73,12 @@ Item {
   // Re-arm the reconnect loop, used right after spawning mpv.
   function kick() {
     reconnectAttempt = 0
+    linkHealAttempts = 0
     if (wanted && !connected) reconnectTimer.restart()
   }
 
   function handleLine(line) {
+    linesSeenThisLink++
     var message = null
     try {
       message = JSON.parse(String(line || ""))
@@ -104,6 +106,8 @@ Item {
   onWantedChanged: {
     if (wanted) return
     reconnectTimer.stop()
+    settleTimer.stop()
+    linkWatchdog.stop()
     socketLoader.active = false
     reconnectAttempt = 0
     resetPending("player stopped")
@@ -121,8 +125,14 @@ Item {
       }
       connected: true
       onConnectionStateChanged: {
-        if (connected) settleTimer.restart()
-        else settleTimer.stop()
+        if (connected) {
+          root.linesSeenThisLink = 0
+          settleTimer.restart()
+          linkWatchdog.restart()
+        } else {
+          settleTimer.stop()
+          linkWatchdog.stop()
+        }
       }
     }
   }
@@ -139,6 +149,24 @@ Item {
       if (root.connected) {
         root.observeAll()
         observationsStarted()
+      }
+    }
+  }
+
+  // Watchdog for connected-but-dead links (see linesSeenThisLink above).
+  // A healthy link always carries observe answers within milliseconds, so
+  // a silent link past the grace period is recreated. The fresh socket
+  // re-runs the connect → settle → observe chain by itself.
+  Timer {
+    id: linkWatchdog
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (root.connected && root.linesSeenThisLink === 0
+          && root.linkHealAttempts < 8) {
+        root.linkHealAttempts++
+        socketLoader.active = false
+        socketLoader.active = true
       }
     }
   }
@@ -168,6 +196,13 @@ Item {
   }
 
   // Stable observation ids shared with the service.
+  // Self-healing: a freshly connected socket sometimes ends up
+  // connected-but-dead (no traffic either way, no errors). mpv always
+  // answers observe_property, so a link that stays silent past a grace
+  // period is a dud and gets recreated. Capped per episode; a new kick()
+  // (spawn, attach) resets the budget.
+  property int linesSeenThisLink: 0
+  property int linkHealAttempts: 0
   function observeAll() {
     observeProperty(1, "pause")
     observeProperty(2, "idle-active")

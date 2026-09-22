@@ -70,12 +70,29 @@ omarchy shell -q quickshell.ytmusic.player volumeDown
 omarchy shell -q quickshell.ytmusic.player launchTui
 ```
 
+Two read-only helpers exist for keybindings and debugging: `status`
+prints the widget's view of the player as JSON, and `reconnect` cycles
+the player's socket without touching mpv.
+
+```bash
+omarchy-shell quickshell.ytmusic.player status
+```
+
 To bind the player to a key, add this to `~/.config/hypr/bindings.lua`:
 
 ```lua
   hl.unbind("SUPER + SHIFT + M") -- previously: Music
   o.bind("SUPER + SHIFT + M", "Omarchy YouTube Music",
     "omarchy shell -q quickshell.ytmusic.player launchTui")
+```
+
+The bar widget's mini player opens like Bluetooth and Network do, through
+the shell's widget toggle — no plugin code needed beyond the `open()` /
+`close()` interface it already exposes:
+
+```lua
+  o.bind("SUPER + CTRL + M", "YT Music mini player",
+    "omarchy-shell shell toggle quickshell.ytmusic")
 ```
 
 Run `hyprctl reload` and check `hyprctl configerrors` after saving.

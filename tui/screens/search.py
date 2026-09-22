@@ -18,6 +18,8 @@ FILTERS = [
     ("albums", "Albums"),
     ("artists", "Artists"),
     ("playlists", "Playlists"),
+    ("podcasts", "Podcasts"),
+    ("episodes", "Episodes"),
 ]
 
 
@@ -133,8 +135,22 @@ class SearchPane(Container):
                         subtitle="Artist",
                         kind="playlist",  # artist pages route through the same opener
                     ))
+            elif kind == "podcast":
+                browse_id = str(item.get("browseId", ""))
+                if browse_id:
+                    colls.append(Collection(
+                        browse_id=browse_id,
+                        title=str(item.get("title", "")),
+                        subtitle="Podcast",
+                        kind="podcast",
+                    ))
+            elif kind == "episode":
+                track = Track.from_result(item)
+                if track:
+                    tracks.append(track)
 
-        if tracks and (self.filter_name in ("all", "songs", "videos")):
+        if tracks and (self.filter_name in ("all", "songs", "videos",
+                                               "episodes")):
             songs.set_tracks(tracks)
             songs.source_label = "Search"
             songs.styles.display = "block"

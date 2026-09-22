@@ -50,9 +50,11 @@ class ArtistScreen(Screen):
                     f"Could not load: {message}")
             )
             return
-        self.app.call_from_thread(self.render, payload)
+        self.app.call_from_thread(self.render_artist, payload)
 
-    def render(self, payload: dict) -> None:
+    # NOTE: must not be named `render` — that would override
+    # textual's Widget.render() and crash the app on layout.
+    def render_artist(self, payload: dict) -> None:
         name = str(payload.get("name") or self.artist_name or "Artist")
         self.query_one("#artist-name", Static).update(name)
         tracks: list[Track] = payload.get("track_list") or []

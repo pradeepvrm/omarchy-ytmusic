@@ -44,6 +44,9 @@ class CollectionScreen(Screen):
         try:
             if self.collection.kind == "album":
                 payload = api.album(self.collection.browse_id)
+            elif self.collection.kind == "podcast":
+                payload = api.podcast(self.collection.playlist_id
+                                      or self.collection.browse_id)
             else:
                 playlist_id = self.collection.playlist_id or self.collection.browse_id
                 payload = api.playlist(playlist_id)
@@ -55,15 +58,18 @@ class CollectionScreen(Screen):
             )
             return
         self.tracks = payload.get("tracks") or []
-        kind_label = "Album" if self.collection.kind == "album" else "Playlist"
+        kind_label = {"album": "Album", "podcast": "Podcast"}.get(
+            self.collection.kind, "Playlist")
         count = payload.get("trackCount") or len(self.tracks)
         duration = payload.get("duration") or ""
         from ..format import total_duration_text
         total = duration or total_duration_text(t.duration_text or t.duration_s for t in self.tracks)
         meta = f"{kind_label} · {count} tracks" + (f" · {total}" if total else "")
-        self.app.call_from_thread(self.render, meta)
+        self.app.call_from_thread(self.render_collection, meta)
 
-    def render(self, meta: str) -> None:
+    # NOTE: must not be named `render` — that would override
+    # textual's Widget.render() and crash the app on layout.
+    def render_collection(self, meta: str) -> None:
         self.query_one("#coll-meta", Static).update(meta)
         table = self.query_one("#coll-tracks", TrackTable)
         table.set_tracks(self.tracks, numbered=True)

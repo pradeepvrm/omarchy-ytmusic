@@ -80,6 +80,10 @@ class HelpScreen(Screen):
         if (event.button.id or "") != "sign-out":
             return
         self.app.api.sign_out()
+        try:
+            self.app.state_writer.ensure_signed(False)
+        except Exception:
+            pass
         self.app.pop_screen()
         self.app.switch_screen(AuthScreen())
 

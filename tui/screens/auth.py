@@ -185,6 +185,10 @@ class AuthScreen(Screen):
         self.query_one("#auth-status", Static).update(message)
 
     def browser_done(self) -> None:
+        try:
+            self.app.state_writer.ensure_signed(True)
+        except Exception:
+            pass
         self.app.notify("Signed in to YouTube Music", severity="information")
         self.app.enter_main()
 
@@ -233,6 +237,10 @@ class AuthScreen(Screen):
             ok = payload.get("ok") is True
             message = str(payload.get("message", ""))
             if ok and signed_in():
+                try:
+                    self.app.state_writer.ensure_signed(True)
+                except Exception:
+                    pass
                 self.app.notify("Signed in to YouTube Music",
                                 severity="information")
                 self.app.enter_main()

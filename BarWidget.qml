@@ -42,6 +42,12 @@ BarWidget {
 
   property bool popupOpen: false
 
+  // Interface the shell's bar looks for to open panel-like widgets from
+  // shortcuts (`omarchy-shell shell toggle <id>`, same as Bluetooth and
+  // Network): findPanelWidget requires open()/close() functions and an
+  // `opened` property on the widget item.
+  readonly property bool opened: popupOpen
+  function open() { popupOpen = true }
   function close() { popupOpen = false }
 
   function syncSettings() {
@@ -398,7 +404,7 @@ BarWidget {
       }
 
       Button {
-        text: root.setupFailed ? "Retry setup" : "Open YouTube Music TUI"
+        text: root.setupFailed ? "Retry setup" : "Open YouTube Music"
         iconText: root.setupFailed ? "󰑐" : "󰆍"
         foreground: root.foreground
         horizontalPadding: Style.spacing.panelGap

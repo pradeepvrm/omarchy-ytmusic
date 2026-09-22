@@ -1,30 +1,72 @@
-"""Shared TUI widgets: the now-playing bar and the track/collection tables."""
+"""Shared TUI widgets: the player bar and the track/collection tables."""
 
 from __future__ import annotations
 
 from typing import List, Optional
 
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal
 from textual.widgets import Button, DataTable, Static
 
 from .format import format_duration
 from .models import Collection, Track
 
 
-class NowPlaying(Static):
-    """One-line player status docked to the bottom of the main screen."""
+class PlayerBar(Container):
+    """Bottom player bar: transport buttons, track line, progress line."""
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="player-main"):
+            yield Button("⏮", id="player-prev", compact=True)
+            yield Button("▶", id="player-toggle", compact=True)
+            yield Button("⏭", id="player-next", compact=True)
+            yield Static("", id="player-track")
+        yield Static("", id="player-progress")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        action = (event.button.id or "").replace("player-", "")
+        if action == "prev":
+            await self.app.action_previous()
+        elif action == "next":
+            await self.app.action_next()
+        elif action == "toggle":
+            await self.app.action_toggle()
 
     def render_bar(self, state, track: Optional[Track], liked: bool = False) -> None:
-        if state is None or state.idle or not state.playlist_count:
-            self.update("  Nothing playing — press / to search, F2 for home")
+        try:
+            toggle = self.query_one("#player-toggle", Button)
+            label = self.query_one("#player-track", Static)
+            progress = self.query_one("#player-progress", Static)
+        except Exception:
             return
-        icon = "||" if state.paused else ">"
+        if state is None or state.idle or not state.playlist_count:
+            toggle.label = "▶"
+            label.update("  Nothing playing — press / to search, F2 for home")
+            progress.update("")
+            return
+        toggle.label = "⏸" if not state.paused else "▶"
         title = track.label() if track else (state.media_title or "Playing…")
-        position = format_duration(int(state.playback_time))
-        total = format_duration(int(state.duration)) if state.duration else ""
-        progress = f"{position}/{total}" if total else position
-        heart = "  *" if liked else ""
-        volume = f"  vol {round(state.volume)}%"
-        self.update(f"  {icon} {title}   {progress}{heart}{volume}")
+        heart = "  ♥" if liked else ""
+        label.update(f"  {title}{heart}")
+        pos = max(0, int(state.playback_time or 0))
+        total = max(0, int(state.duration or 0))
+        volume = f"vol {round(state.volume)}%"
+        if total > 0:
+            width = self._bar_width()
+            filled = min(width, round(width * pos / total))
+            bar = "━" * filled + "●" + "─" * max(0, width - filled - 1)
+            progress.update(
+                f"  {format_duration(pos)} {bar} "
+                f"{format_duration(total)}   {volume}")
+        else:
+            progress.update(f"  {format_duration(pos)}   {volume}")
+
+    def _bar_width(self) -> int:
+        try:
+            width = self.app.console.size.width - 34
+        except Exception:
+            width = 30
+        return max(10, min(80, width))
 
 
 class TrackTable(DataTable):
@@ -137,7 +179,8 @@ class CollectionTable(DataTable):
             self.clear()
         for index, collection in enumerate(self.collections):
             kind = {"playlist": "Playlist", "album": "Album",
-                    "single": "Single", "ep": "EP"}.get(collection.kind, "List")
+                    "single": "Single", "ep": "EP",
+                    "podcast": "Podcast"}.get(collection.kind, "List")
             count = f"{collection.track_count} tracks" if collection.track_count else ""
             # See TrackTable.set_tracks: keys must be unique per row.
             self.add_row(collection.title, collection.subtitle, kind, count,
@@ -155,24 +198,6 @@ class CollectionTable(DataTable):
         collection = self.cursor_collection()
         if collection and hasattr(self.app, "open_collection"):
             await self.app.open_collection(collection)
-
-
-class CardButton(Button):
-    """A clickable card used on the homepage shelves."""
-
-    def __init__(self, title: str, subtitle: str, payload, **kwargs) -> None:
-        self.payload = payload
-        label = f"{title}\n{subtitle}" if subtitle else title
-        super().__init__(label, **kwargs)
-
-    def on_button_pressed(self, event) -> None:  # noqa: N802 (textual event name)
-        event.stop()
-        app = self.app
-        payload = self.payload
-        if isinstance(payload, Collection) and hasattr(app, "open_collection"):
-            app.call_later(app.open_collection, payload)
-        elif isinstance(payload, Track) and hasattr(app, "play_tracks"):
-            app.call_later(app.play_tracks, [payload], 0, source="Home")
 
 
 class SectionTitle(Static):

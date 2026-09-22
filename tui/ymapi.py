@@ -77,6 +77,28 @@ def auth_method() -> str:
     return ""
 
 
+def is_podcast_id(playlist_id: str) -> bool:
+    """Whether a playlist id addresses a podcast show.
+
+    Shows use MPSP… ids and surface as VLMPSP… playlist links; both crash
+    ytmusicapi's music-playlist parser and need get_podcast instead.
+    """
+    text = str(playlist_id or "")
+    if text.startswith("VL"):
+        text = text[2:]
+    return text.startswith("MPSP")
+
+
+def normalize_podcast_id(playlist_id: str) -> str:
+    """Strip a VL playlist wrapper so get_podcast receives an MPSP… id."""
+    text = str(playlist_id or "")
+    if text.startswith("VL"):
+        rest = text[2:]
+        if rest.startswith("MPSP"):
+            return rest
+    return text
+
+
 def store_browser_headers(headers_raw: str) -> None:
     """Parse pasted browser request headers and store browser.json.
 
@@ -333,10 +355,32 @@ class YtMusic:
         return Track.from_result(details)
 
     def playlist(self, playlist_id: str, limit: int = 500) -> Dict[str, Any]:
+        if is_podcast_id(playlist_id):
+            return self.podcast(playlist_id, limit=limit)
         payload = self._yt().get_playlist(playlist_id, limit=limit)
         if not isinstance(payload, dict):
             return {"title": "Playlist", "tracks": []}
         payload["tracks"] = tracks_from(payload.get("tracks"))
+        return payload
+
+    def podcast(self, playlist_id: str, limit: int = 100) -> Dict[str, Any]:
+        """Load a podcast show (MPSP… or VLMPSP… id) as episodes.
+
+        Music-playlist parsing crashes on show layouts, so shows need
+        ytmusicapi's get_podcast. Episodes carry no artist, so the show
+        title fills in as the artist for display and the bar widget.
+        """
+        payload = self._yt().get_podcast(normalize_podcast_id(playlist_id),
+                                         limit=limit)
+        if not isinstance(payload, dict):
+            return {"title": "Podcast", "tracks": []}
+        title = str(payload.get("title") or "Podcast")
+        tracks = tracks_from(payload.get("episodes"))
+        for track in tracks:
+            if not track.artist:
+                track.artist = title
+        payload["tracks"] = tracks
+        payload["title"] = title
         return payload
 
     def album(self, browse_id: str) -> Dict[str, Any]:

@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import re
+
+_WORD_DURATION = re.compile(
+    r"(\d+)\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b", re.IGNORECASE)
+
 
 def parse_duration(value) -> int:
-    """Parse a duration that may be "h:mm:ss", "m:ss", or seconds."""
+    """Parse a duration: "h:mm:ss", "m:ss", seconds, or words.
+
+    Podcast episodes report word forms like "25 min" or "1 hr 7 min".
+    """
     if value is None:
         return 0
     if isinstance(value, (int, float)):
@@ -19,6 +27,18 @@ def parse_duration(value) -> int:
                 total = total * 60 + int(part)
         except ValueError:
             return 0
+        return total
+    words = _WORD_DURATION.findall(text)
+    if words:
+        total = 0
+        for amount, unit in words:
+            unit = unit.lower()
+            if unit.startswith("h"):
+                total += int(amount) * 3600
+            elif unit.startswith("min"):
+                total += int(amount) * 60
+            elif unit.startswith("s"):
+                total += int(amount)
         return total
     digits = ""
     for ch in text:

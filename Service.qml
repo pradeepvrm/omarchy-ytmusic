@@ -374,6 +374,11 @@ Item {
     repeat: true
     running: true
     onTriggered: {
+      // Periodic re-seed: local socket writes/reads occasionally get lost
+      // (swallowed at connect time, dropped events), which used to leave
+      // the widget blind for hours. Nine tiny round-trips every 20 s keep
+      // the widget's view of mpv honest no matter what was missed.
+      if (playerClient.connected) root.seedPlayerState()
       if (!playerClient.connected) {
         root.idleSince = 0
         return
@@ -516,6 +521,30 @@ Item {
     }
 
     function retrySetup(): string { root.retrySetup(); return "ok" }
+
+    // Read-only diagnostics (and recovery) for the player link. The link
+    // fails silently when it fails, so this is the support tool: check
+    // `status`, and if `connected` is true but nothing ever arrives,
+    // `reconnect` cycles the socket without touching mpv.
+    function status(): string {
+      return JSON.stringify({
+        connected: playerClient.connected,
+        paused: root.mpvPaused, idle: root.mpvIdleActive,
+        pos: root.mpvQueueIndex, count: root.mpvQueueCount,
+        title: root.title, artist: root.artist,
+        volume: Math.round(root.mpvVolume), hasMedia: root.hasMedia,
+        setup: root.setupState,
+        linkLines: playerClient.linesSeenThisLink,
+        linkHeals: playerClient.linkHealAttempts
+      })
+    }
+
+    function reconnect(): string {
+      playerClient.wanted = false
+      playerClient.wanted = true
+      playerClient.kick()
+      return "ok"
+    }
   }
 
   // ------------------------------------------------------ bootstrap
