@@ -522,21 +522,31 @@ Item {
 
     function retrySetup(): string { root.retrySetup(); return "ok" }
 
-    // Read-only diagnostics (and recovery) for the player link. The link
-    // fails silently when it fails, so this is the support tool: check
-    // `status`, and if `connected` is true but nothing ever arrives,
-    // `reconnect` cycles the socket without touching mpv.
+    // Read-only diagnostics (and recovery) for the player link, and the
+    // data source for bar widgets hosted by third-party bars: those receive
+    // a service-less facade by shell design, so their widgets poll this
+    // instead of reading the live service object.
     function status(): string {
       return JSON.stringify({
         connected: playerClient.connected,
         paused: root.mpvPaused, idle: root.mpvIdleActive,
         pos: root.mpvQueueIndex, count: root.mpvQueueCount,
         title: root.title, artist: root.artist,
+        videoId: root.videoId, source: root.sourceLabel,
+        position: root.playbackPosition, duration: root.mpvDuration,
         volume: Math.round(root.mpvVolume), hasMedia: root.hasMedia,
-        setup: root.setupState,
+        signedIn: root.signedIn,
+        setup: root.setupState, setupError: root.setupError,
         linkLines: playerClient.linesSeenThisLink,
         linkHeals: playerClient.linkHealAttempts
       })
+    }
+
+    // Widget settings forwarded by bar widgets that cannot call
+    // applySettings on the live object (third-party bars, see above).
+    function updateSettings(json: string): string {
+      root.applySettings(Api.parseJson(json, null))
+      return "ok"
     }
 
     function reconnect(): string {

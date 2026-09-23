@@ -15,18 +15,126 @@ BarWidget {
     ? bar.shell.serviceFor("quickshell.ytmusic") : null
   readonly property color foreground: bar ? bar.barForeground : Color.foreground
 
-  readonly property string title: service ? service.title : ""
-  readonly property string artist: service ? service.artist : ""
-  readonly property bool hasMedia: service ? service.hasMedia : false
-  readonly property bool playing: service ? service.playing : false
-  readonly property string setupState: service ? service.setupState : "checking"
-  readonly property string setupError: service ? service.setupError : ""
-  readonly property bool signedIn: service ? service.signedIn : false
-  readonly property bool showPausedTrack: service ? service.showPausedTrack : true
-  readonly property bool showTrackTitle: service ? service.showTrackTitle : true
-  readonly property bool showArtistName: service ? service.showArtistName : true
-  readonly property bool scrollBarText: service ? service.scrollBarText : true
-  readonly property real maxBarTextWidth: service ? service.maxBarTextWidth : 260
+  // Third-party bars hand widgets a service-less facade by shell design,
+  // so `service` above is null there. Fall back to polling our own
+  // service over its public IPC (`status`), exactly like keybindings do.
+  // Display reads below use the eff* properties; controls go through
+  // invoke(), which calls the live object when present and IPC otherwise.
+  readonly property bool useFallback: !service
+  property string fbTitle: ""
+  property string fbArtist: ""
+  property string fbVideoId: ""
+  property string fbSource: ""
+  property bool fbHasMedia: false
+  property bool fbPlaying: false
+  property bool fbSignedIn: false
+  property string fbSetupState: "checking"
+  property string fbSetupError: ""
+  property int fbQueueIndex: -1
+  property int fbQueueCount: 0
+  property real fbPosition: 0
+  property real fbDuration: 0
+  property real fbVolume: 100
+  property bool fbAlive: false
+
+  function settingOn(key) {
+    if (!settings) return true
+    return String(settings[key] || "On") !== "Off"
+  }
+
+  function invoke(method) {
+    if (service && typeof service[method] === "function") {
+      service[method]()
+      return
+    }
+    var ipc = method === "stopPlayback" ? "stop" : method
+    Quickshell.execDetached(
+      ["omarchy-shell", "-q", "quickshell.ytmusic.player", ipc])
+  }
+
+  function applyStatus(json) {
+    var d = Api.parseJson(json, null)
+    if (!d || typeof d !== "object") return
+    fbTitle = String(d.title || "")
+    fbArtist = String(d.artist || "")
+    fbVideoId = String(d.videoId || "")
+    fbSource = String(d.source || "")
+    fbHasMedia = d.hasMedia === true
+    fbPlaying = d.hasMedia === true && d.paused !== true
+    fbSignedIn = d.signedIn === true
+    fbSetupState = String(d.setup || "checking")
+    fbSetupError = String(d.setupError || "")
+    fbQueueIndex = (d.pos === undefined || d.pos === null)
+      ? -1 : Math.floor(Number(d.pos))
+    fbQueueCount = (d.count === undefined || d.count === null)
+      ? 0 : Math.floor(Number(d.count))
+    fbDuration = (d.duration === undefined || d.duration === null)
+      ? 0 : Number(d.duration)
+    fbVolume = (d.volume === undefined || d.volume === null)
+      ? 100 : Number(d.volume)
+    if (typeof d.position === "number") fbPosition = d.position
+    fbAlive = true
+  }
+
+  property Process statusProcess: Process {
+    command: ["omarchy-shell", "quickshell.ytmusic.player", "status"]
+    stdout: StdioCollector { id: statusOut; waitForEnd: true }
+    onExited: function(code) {
+      if (code === 0) root.applyStatus(String(statusOut.text || ""))
+    }
+  }
+
+  Timer {
+    id: statusTimer
+    interval: 2000
+    repeat: true
+    triggeredOnStart: true
+    running: root.useFallback
+    onTriggered: {
+      if (!statusProcess.running) statusProcess.running = true
+    }
+  }
+
+  // Local 1 s advance between polls so the progress text stays smooth.
+  Timer {
+    interval: 1000
+    repeat: true
+    running: root.useFallback && root.fbPlaying && root.fbHasMedia
+    onTriggered: {
+      if (root.fbDuration > 0)
+        root.fbPosition = Math.min(root.fbDuration, root.fbPosition + 1)
+      else root.fbPosition = root.fbPosition + 1
+    }
+  }
+
+  readonly property string title: service ? service.title : fbTitle
+  readonly property string artist: service ? service.artist : fbArtist
+  readonly property bool hasMedia: service ? service.hasMedia : fbHasMedia
+  readonly property bool playing: service ? service.playing : fbPlaying
+  readonly property string setupState: service ? service.setupState : fbSetupState
+  readonly property string setupError: service ? service.setupError : fbSetupError
+  readonly property bool signedIn: service ? service.signedIn : fbSignedIn
+  readonly property bool showPausedTrack: service ? service.showPausedTrack : settingOn("showPausedTrack")
+  readonly property bool showTrackTitle: service ? service.showTrackTitle : settingOn("showTrackTitle")
+  readonly property bool showArtistName: service ? service.showArtistName : settingOn("showArtistName")
+  readonly property bool scrollBarText: service ? service.scrollBarText : settingOn("scrollBarText")
+  readonly property real maxBarTextWidth: service ? service.maxBarTextWidth
+    : Api.normalizedMaxBarTextWidth(settings ? settings.maxBarTextWidth : 260)
+  readonly property string effArtUrl: service ? String(service.artUrl || "")
+    : Api.thumbnailUrl(fbVideoId)
+  readonly property string effSourceLabel: service ? String(service.sourceLabel || "")
+    : fbSource
+  readonly property real effPosition: service ? service.playbackPosition : fbPosition
+  readonly property real effDuration: service ? service.mpvDuration : fbDuration
+  readonly property real effVolume: service ? service.mpvVolume : fbVolume
+  readonly property string effPositionText: service ? service.positionText
+    : (Api.formatTime(fbPosition)
+      + (fbDuration > 0 ? " / " + Api.formatTime(fbDuration) : ""))
+  readonly property bool effCanPrev: service ? service.canGoPrevious
+    : (fbHasMedia && fbQueueIndex > 0)
+  readonly property bool effCanNext: service ? service.canGoNext
+    : (fbHasMedia && fbQueueIndex >= 0 && fbQueueIndex < fbQueueCount - 1)
+  readonly property bool effAlive: service ? service.playerAlive : true
 
   readonly property string barText: Api.barTrackText(title, artist,
     showTrackTitle ? "On" : "Off", showArtistName ? "On" : "Off")
@@ -51,7 +159,13 @@ BarWidget {
   function close() { popupOpen = false }
 
   function syncSettings() {
-    if (service) service.applySettings(settings)
+    if (service) {
+      service.applySettings(settings)
+      return
+    }
+    Quickshell.execDetached(["omarchy-shell", "-q",
+      "quickshell.ytmusic.player", "updateSettings",
+      JSON.stringify(settings || {})])
   }
 
   onSettingsChanged: syncSettings()
@@ -145,23 +259,22 @@ BarWidget {
 
     onClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) {
-        if (root.service) root.service.launchTui()
+        root.invoke("launchTui")
       } else if (mouse.button === Qt.MiddleButton) {
-        if (root.service) root.service.toggle()
+        root.invoke("toggle")
       } else {
         root.popupOpen = !root.popupOpen
       }
     }
 
     onWheel: function(wheel) {
-      if (!root.service) return
       var shift = (wheel.modifiers & Qt.ShiftModifier) !== 0
       if (shift) {
-        if (wheel.angleDelta.y > 0) root.service.previous()
-        else root.service.next()
+        if (wheel.angleDelta.y > 0) root.invoke("previous")
+        else root.invoke("next")
       } else {
-        if (wheel.angleDelta.y > 0) root.service.volumeUp()
-        else root.service.volumeDown()
+        if (wheel.angleDelta.y > 0) root.invoke("volumeUp")
+        else root.invoke("volumeDown")
       }
     }
 
@@ -215,7 +328,7 @@ BarWidget {
             anchors.margins: Style.space(2)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            source: root.service && root.service.artUrl ? root.service.artUrl : ""
+            source: root.effArtUrl
             visible: source !== "" && status === Image.Ready
           }
 
@@ -257,7 +370,7 @@ BarWidget {
 
           Text {
             textFormat: Text.PlainText
-            text: root.service && root.service.sourceLabel ? root.service.sourceLabel : ""
+            text: root.effSourceLabel
             color: Qt.darker(root.foreground, 1.6)
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.caption
@@ -268,7 +381,7 @@ BarWidget {
 
           Text {
             textFormat: Text.PlainText
-            text: root.service ? root.service.positionText : ""
+            text: root.effPositionText
             color: Qt.darker(root.foreground, 1.45)
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.caption
@@ -291,8 +404,8 @@ BarWidget {
           borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
 
           Rectangle {
-            readonly property real fraction: root.service && root.service.mpvDuration > 0
-              ? Math.min(1, Math.max(0, root.service.playbackPosition / root.service.mpvDuration))
+            readonly property real fraction: root.effDuration > 0
+              ? Math.min(1, Math.max(0, root.effPosition / root.effDuration))
               : 0
             x: parent.borderLeft
             y: parent.borderTop
@@ -316,9 +429,9 @@ BarWidget {
           foreground: root.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          enabled: root.service && root.service.canGoPrevious
+          enabled: root.effCanPrev
           opacity: enabled ? 1.0 : 0.4
-          onClicked: if (root.service) root.service.previous()
+          onClicked: root.invoke("previous")
         }
 
         Button {
@@ -327,9 +440,9 @@ BarWidget {
           horizontalPadding: Style.spacing.panelGap
           verticalPadding: Style.spacing.controlPaddingY
           iconSize: Style.font.iconLarge
-          enabled: root.service && root.service.playerAlive
+          enabled: root.effAlive
           opacity: enabled ? 1.0 : 0.4
-          onClicked: if (root.service) root.service.toggle()
+          onClicked: root.invoke("toggle")
         }
 
         Button {
@@ -337,9 +450,9 @@ BarWidget {
           foreground: root.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          enabled: root.service && root.service.canGoNext
+          enabled: root.effCanNext
           opacity: enabled ? 1.0 : 0.4
-          onClicked: if (root.service) root.service.next()
+          onClicked: root.invoke("next")
         }
 
         Button {
@@ -347,9 +460,9 @@ BarWidget {
           foreground: root.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          enabled: root.service && root.service.hasMedia
+          enabled: root.hasMedia
           opacity: enabled ? 1.0 : 0.4
-          onClicked: if (root.service) root.service.stopPlayback()
+          onClicked: root.invoke("stopPlayback")
         }
       }
 
@@ -362,13 +475,13 @@ BarWidget {
           foreground: root.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          onClicked: if (root.service) root.service.volumeUp()
+          onClicked: root.invoke("volumeUp")
         }
 
         Text {
           textFormat: Text.PlainText
           anchors.verticalCenter: parent.verticalCenter
-          text: root.service ? Math.round(root.service.mpvVolume) + "%" : "100%"
+          text: Math.round(root.effVolume) + "%"
           color: Qt.darker(root.foreground, 1.3)
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -379,7 +492,7 @@ BarWidget {
           foreground: root.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          onClicked: if (root.service) root.service.volumeDown()
+          onClicked: root.invoke("volumeDown")
         }
       }
 
@@ -412,7 +525,7 @@ BarWidget {
         anchors.horizontalCenter: parent.horizontalCenter
         onClicked: {
           root.popupOpen = false
-          if (root.service) root.service.launchTui()
+          root.invoke("launchTui")
         }
       }
     }
